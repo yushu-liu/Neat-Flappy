@@ -10,9 +10,6 @@ import sys
 from pygame.locals import *
 
 
-    
-
-
 FPS = 30
 SCREENWIDTH = 288
 SCREENHEIGHT = 512
@@ -55,6 +52,7 @@ PIPES_LIST = (
     'assets/sprites/pipe-red.png',
 )
 
+generation = 0
 
 try:
     xrange
@@ -268,18 +266,24 @@ def mainGame(players, nets, genes):
     playerVelY = -9   # player's velocity along Y, default same as playerFlapped
     playerMaxVelY = 10   # max vel along Y, max descend speed
     playerMinVelY = -8   # min vel along Y, max ascend speed
-    playerAccY = 1   # players downward accleration
+    playerAccY = 1.1   # players downward accleration
     playerRot = 45   # player's rotation
     playerVelRot = 3   # angular speed
     playerRotThr = 20   # rotation threshold
     playerFlapAcc = -9   # players speed on flapping
     playerFlapped = False  # True when player flaps
-
+    global FPS
     while len(players) != 0:
         for event in pygame.event.get():
             if event.type == QUIT or (event.type == KEYDOWN and event.key == K_ESCAPE):
                 pygame.quit()
                 sys.exit()
+            if event.type == KEYDOWN and (event.key == K_SPACE or event.key == K_UP):
+                FPS += 100
+            if event.type == KEYDOWN and (event.key == K_DOWN):
+                FPS -= 100
+            if event.type == KEYDOWN and (event.key == K_LEFT):
+                bestFit = not bestFit
          # add new pipe when first pipe is about to touch left of screen
         if 0 < upperPipes[0]['x'] < 5:
             newPipe = getRandomPipe()
@@ -289,10 +293,18 @@ def mainGame(players, nets, genes):
         for px, player in enumerate(players):
             playery = player["playery"]
             playerx = player["playerx"]
-            output = nets[px].activate((playery, abs(playery - upperPipes[len(upperPipes) - 2]['y']), abs(playery - lowerPipes[len(lowerPipes) - 2]['y']), abs(playery - upperPipes[len(upperPipes) - 1]['y']), abs(playery - lowerPipes[len(lowerPipes) - 1]["y"]), playerx - lowerPipes[len(lowerPipes) - 1]['x'] - IMAGES['player'][player['playerIndex']].get_width(),playerx - lowerPipes[len(lowerPipes) - 2]['x'] - IMAGES['player'][player['playerIndex']].get_width()))
-            print(vars(nets[px]))
+            startedScoeing = 0
+            if score > 0:
+                startedScoeing = 1
+            up = 0
+            if lowerPipes[len(lowerPipes) - 1]['y'] - lowerPipes[len(lowerPipes) - 2]['y'] > 0:
+                up = 1
+            meme = 0
+            if score >= 69:
+                meme = 1+ score*score
+
+            output = nets[px].activate((playery, abs(playery - upperPipes[len(upperPipes) - 2]['y']), abs(playery - lowerPipes[len(lowerPipes) - 2]['y']), player["playerVelY"], startedScoeing, abs(lowerPipes[len(lowerPipes) - 1]['y'] - lowerPipes[len(lowerPipes) - 2]['y']), up, meme))
             if output[0] > .5:
-                SOUNDS['wing'].play()
                 player["playerFlapped"] = True
                     
         
@@ -306,17 +318,40 @@ def mainGame(players, nets, genes):
                 players.remove(players[idx])
                 genes.remove(genes[idx])
                 nets.remove(nets[idx])
-        increasescore = False     
+
+            
+        
+
+        # playerIndex basex change
+        
+        loopIter = (loopIter + 1) % 30
+        basex = -((-basex + 100) % baseShift)
+        increasescore = False      
+
+        # player's movement
         for idx, player in enumerate(players):
-            playerx = player["playerx"]
-            playery = player["playery"]
+            playerVelY = player["playerVelY"]
+            playerFlapped = player["playerFlapped"]
             playerMidPos = playerx + IMAGES['player'][0].get_width() / 2
+            if playerVelY < playerMaxVelY and not playerFlapped:
+                player["playerVelY"] += playerAccY
+            if playerFlapped:
+                if player["playerVelY"] > -9:
+                    if player["playerVelY"] - 9 < -9:
+                        player["playerVelY"] = -9
+                    else:
+                        player["playerVelY"] += -9
+                    SOUNDS['wing'].play()
+                player["playerFlapped"] = False
+                player["playerRot"] = 45
+            playerHeight = IMAGES['player'][player["playerIndex"]].get_height()
+            player["playery"] += min(player["playerVelY"], BASEY - player["playery"] - playerHeight)
+            
             for pipe in upperPipes:
                 pipeMidPos = pipe['x'] + IMAGES['pipe'][0].get_width() / 2
                 if pipeMidPos <= playerMidPos < pipeMidPos + 4 and not player["dead"]:
                     increasescore = True
                     player["fitness"] += 1
-                    
             if (loopIter + 1) % 3 == 0:
                 player["playerIndex"] = next(player["playerIndexGen"])
             if player["playerRot"] > -90:
@@ -324,24 +359,6 @@ def mainGame(players, nets, genes):
         if increasescore:
             score += 1
             SOUNDS['point'].play()
-
-        # playerIndex basex change
-        
-        loopIter = (loopIter + 1) % 30
-        basex = -((-basex + 100) % baseShift)
-
-        # player's movement
-        for idx, player in enumerate(players):
-            playerVelY = player["playerVelY"]
-            playerFlapped = player["playerFlapped"]
-            if playerVelY < playerMaxVelY and not playerFlapped:
-                player["playerVelY"] += playerAccY
-            if playerFlapped:
-                player["playerVelY"] = -9
-                player["playerFlapped"] = False
-                player["playerRot"] = 45
-            playerHeight = IMAGES['player'][player["playerIndex"]].get_height()
-            player["playery"] += min(player["playerVelY"], BASEY - player["playery"] - playerHeight)
 
         # move pipes to left
         for uPipe, lPipe in zip(upperPipes, lowerPipes):
@@ -366,7 +383,30 @@ def mainGame(players, nets, genes):
         # print score so player overlaps the score
         showScore(score)
 
-        # Player rotation has a threshold
+        white = (255, 255, 255) 
+        font = pygame.font.Font('freesansbold.ttf', 20) 
+        text = font.render('Alive = ' + str(len(players)), True, white) 
+        textRect = text.get_rect()  
+        textRect.center = (50, 15)
+        SCREEN.blit(text, textRect) 
+
+        global generation
+        font = pygame.font.Font('freesansbold.ttf', 20) 
+        text = font.render('Generation = ' + str(generation), True, white) 
+        textRect = text.get_rect()  
+        textRect.center = (80, 30)
+        SCREEN.blit(text, textRect) 
+
+
+        font = pygame.font.Font('freesansbold.ttf', 20) 
+        text = font.render('FPS = ' + str(FPS), True, white) 
+        textRect = text.get_rect()  
+        textRect.center = (50, 45)
+        SCREEN.blit(text, textRect)
+
+
+       
+
         for idx, player in enumerate(players):
             if not player["dead"]:
                 visibleRot = playerRotThr
@@ -376,6 +416,21 @@ def mainGame(players, nets, genes):
                     IMAGES['player'][player["playerIndex"]], visibleRot)
                 SCREEN.blit(playerSurface, (player["playerx"], player["playery"]))
                 player["fitness"] += 0.01
+                if score > 79:
+                    player["dead"] = True
+                    genes[idx].fitness = -1
+                    players.remove(players[idx])
+                    genes.remove(genes[idx])
+                    nets.remove(nets[idx])
+                if score > 69:
+                    player["fitness"] += -100
+                    
+                elif score > 59:
+                    player["fitness"] += 100
+                
+                
+        
+
         pygame.display.update()
         FPSCLOCK.tick(FPS)
 
@@ -547,6 +602,8 @@ def getHitmask(image):
 def eval_genomes(genomes, config):
     nets = []
     ges = []
+    global generation
+    generation += 1
     for genome_id, genome in genomes:
         genome.fitness = 0  # start with fitness level of 0
         net = neat.nn.FeedForwardNetwork.create(genome, config)
